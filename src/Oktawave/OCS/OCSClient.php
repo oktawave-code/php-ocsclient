@@ -475,8 +475,15 @@ class Oktawave_OCS_OCSClient
             $url = $endpoint;
         } else {
             // Allow files with spaces
-            $endpoint = rawurlencode($endpoint);
-            $url = $this->storageUrl . '/' . $endpoint;
+            $urlParts    = explode('?', $endpoint, 2);
+            $bucketPath  = array_key_exists(0, $urlParts) ? $urlParts[0] : null;
+            $queryParams = array_key_exists(1, $urlParts) ? $urlParts[1] : null;
+            $bucketPath  = rawurlencode($bucketPath);
+            $url         = $this->storageUrl . '/' . $bucketPath;
+
+            if (!empty($queryParams)) {
+              $url .= '?' . $queryParams;
+            }
         }
 
         curl_setopt_array($curl, array(
