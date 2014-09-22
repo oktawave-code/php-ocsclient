@@ -46,6 +46,10 @@ class Oktawave_OCS_OCSClient
     protected $authToken;
     protected $storageUrl;
     protected $useragent = 'osc-client';
+    /**
+     * @var bool Should CURL be verbose or not.
+     */
+    protected $verbosity = true;
 
     /**
      * The array of request content types based on the specified response format
@@ -485,7 +489,7 @@ class Oktawave_OCS_OCSClient
             CURLOPT_SSL_VERIFYHOST => 2,
             CURLOPT_CAINFO => dirname(__FILE__) . '/ca-bundle.crt',
             CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_VERBOSE => true,
+            CURLOPT_VERBOSE => $this->getVerbosity(),
             CURLOPT_USERAGENT => $this->useragent,
             CURLOPT_FAILONERROR => true,
         ));
@@ -631,4 +635,19 @@ class Oktawave_OCS_OCSClient
         return $headers;
     }
 
+    /**
+     * @return boolean
+     */
+    public function getVerbosity()
+    {
+      return $this->verbosity;
+    }
+  
+    /**
+     * @param boolean $verbosity
+     */
+    public function setVerbosity($verbosity)
+    {
+      $this->verbosity = boolval($verbosity);
+    }
 }
