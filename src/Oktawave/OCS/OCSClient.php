@@ -294,6 +294,28 @@ class Oktawave_OCS_OCSClient
     }
 
     /**
+     * @see http://docs.openstack.org/api/openstack-object-storage/1.0/content/archive-auto-extract.html
+     *
+     * @param string $path
+     * @param string|null $dstFolder Prefix for the resulting object names.
+     *
+     * @throws RuntimeException
+     * @return string
+     */
+    public function extractArchive($path, $dstFolder = null)
+    {
+        $allowed = array('tar', 'tar.gz', 'tar.bz2');
+        $format = substr($path, strrpos($path, 'tar'));
+
+        if (!in_array($format, $allowed)) {
+            throw new \RuntimeException('File does not look like a supported TAR archive = ' . $format);
+        }
+
+        $dstFolder .= '?extract-archive=' . $format;
+        return $this->createObject($path, $dstFolder, false);
+    }
+
+    /**
      * Creates empy directory (pseudo-directory) for given path
      * 
      * @param string $dstPath Destination path
