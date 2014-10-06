@@ -12,6 +12,7 @@
  *
  * @author Rafał Lorenz <rlorenz@octivi.com>
  * @author Antoni Orfin <aorfin@octivi.com>
+ * @author Tomek Marcinkowski <tomasz@marcinkowski.pl>
  */
 class Oktawave_OCS_OCSClient
 {
@@ -41,11 +42,21 @@ class Oktawave_OCS_OCSClient
      */
     const DEFAULT_DELIMITER = '/';
 
+    /**
+     * Default limit for listing of long list of objects.
+     */
+    const DEFAULT_LIMIT = 10000;
+
     protected $url;
     protected $bucket;
     protected $authToken;
     protected $storageUrl;
     protected $useragent = 'osc-client';
+    protected $markers = array();
+    /**
+     * @var bool Should CURL be verbose or not.
+     */
+    protected $verbosity = true;
 
     /**
      * The array of request content types based on the specified response format
@@ -125,13 +136,23 @@ class Oktawave_OCS_OCSClient
      *      ),
      *      ...
      * );
-     * 
+     *
+     * Example of using the $limit argument:
+     *
+     * $limit = 10;
+     * do {
+     *   $objects = $OCSClient->listObjects(null, $limit);
+     *   var_dump($objects);
+     * } while (count($objects) >= $limit);
+     *
      * @param string $path
+     * @param int $limit Limit the number of objects per response.
+     * @param bool $useMarker Last position marker - switch to tell whether continuous listings for the same path should return continuous results or not.
      * @param string $delimiter
      * @param boolean $fullUrls
      * @return array
      */
-    public function listObjects($path = null, $delimiter = null, $fullUrls = false)
+    public function listObjects($path = null, $limit = null, $useMarker = true, $delimiter = null, $fullUrls = false)
     {
         $this->isAuthenticated();
 
@@ -147,13 +168,32 @@ class Oktawave_OCS_OCSClient
             $queryParams['delimiter'] = $delimiter;
         }
 
+        $limit = $this->getListObjectsLimit(intval($limit));
+        if ($limit) {
+            $queryParams['limit'] = $limit;
+
+            if ($useMarker) {
+                $marker = $this->getMarkerForPath($path);
+
+                if ($marker) {
+                    $queryParams['marker'] = $marker;
+                }
+            }
+        }
+
         if (!empty($queryParams)) {
             $endpoint .= '?' . http_build_query($queryParams);
         }
 
-        $ret = $this->createCurl($this->bucket . $endpoint, self::METHOD_GET, null, null, true, false, self::FORMAT_JSON);
+        $ret             = $this->createCurl($this->bucket . $endpoint, self::METHOD_GET, null, null, true, false, self::FORMAT_JSON);
+        $responseObjects = json_decode($ret['body'], true);
 
-        return json_decode($ret['body'], true);
+        if ($useMarker) {
+            $this->setMarkerForPath($path, end($responseObjects));
+            reset($responseObjects);
+        }
+
+        return $responseObjects;
     }
 
     /**
@@ -254,6 +294,28 @@ class Oktawave_OCS_OCSClient
     }
 
     /**
+     * @see http://docs.openstack.org/api/openstack-object-storage/1.0/content/archive-auto-extract.html
+     *
+     * @param string $path
+     * @param string|null $dstFolder Prefix for the resulting object names.
+     *
+     * @throws RuntimeException
+     * @return string
+     */
+    public function extractArchive($path, $dstFolder = null)
+    {
+        $allowed = array('tar', 'tar.gz', 'tar.bz2');
+        $format = substr($path, strrpos($path, 'tar'));
+
+        if (!in_array($format, $allowed)) {
+            throw new \RuntimeException('File does not look like a supported TAR archive = ' . $format);
+        }
+
+        $dstFolder .= '?extract-archive=' . $format;
+        return $this->createObject($path, $dstFolder, false);
+    }
+
+    /**
      * Creates empy directory (pseudo-directory) for given path
      * 
      * @param string $dstPath Destination path
@@ -343,7 +405,7 @@ class Oktawave_OCS_OCSClient
     }
 
     /**
-     * Server-Side rename object
+     * Server-Side rename / move object
      * 
      * @param string $path
      * @param string $newName
@@ -475,8 +537,15 @@ class Oktawave_OCS_OCSClient
             $url = $endpoint;
         } else {
             // Allow files with spaces
-            $endpoint = rawurlencode($endpoint);
-            $url = $this->storageUrl . '/' . $endpoint;
+            $urlParts    = explode('?', $endpoint, 2);
+            $bucketPath  = array_key_exists(0, $urlParts) ? $urlParts[0] : null;
+            $queryParams = array_key_exists(1, $urlParts) ? $urlParts[1] : null;
+            $bucketPath  = rawurlencode($bucketPath);
+            $url         = $this->storageUrl . '/' . $bucketPath;
+
+            if (!empty($queryParams)) {
+              $url .= '?' . $queryParams;
+            }
         }
 
         curl_setopt_array($curl, array(
@@ -485,7 +554,7 @@ class Oktawave_OCS_OCSClient
             CURLOPT_SSL_VERIFYHOST => 2,
             CURLOPT_CAINFO => dirname(__FILE__) . '/ca-bundle.crt',
             CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_VERBOSE => true,
+            CURLOPT_VERBOSE => $this->getVerbosity(),
             CURLOPT_USERAGENT => $this->useragent,
             CURLOPT_FAILONERROR => true,
         ));
@@ -631,4 +700,59 @@ class Oktawave_OCS_OCSClient
         return $headers;
     }
 
+    /**
+     * Returns a marker for long file objects' list listings.
+     * The marker is last item of recent listing for the path.
+     *
+     * @param string $path
+     * @return string
+     */
+    protected function getMarkerForPath($path)
+    {
+        if (!array_key_exists($path, $this->markers)) {
+            $this->markers[$path] = null;
+        }
+
+        return $this->markers[$path];
+    }
+
+    /**
+     * @param string $path
+     * @param array $lastItem Last item of listObjects() response. Currently only JSON response (the default) is supported.
+     */
+    protected function setMarkerForPath($path, $lastItem)
+    {
+        $newMarker = null;
+
+        if (is_array($lastItem) && array_key_exists('name', $lastItem)) {
+            $newMarker = $lastItem['name'];
+        }
+
+        $this->markers[$path] = $newMarker;
+    }
+
+    /**
+     * @param int $limit
+     * @return int
+     */
+    protected  function getListObjectsLimit($limit = null)
+    {
+        return $limit ? : self::DEFAULT_LIMIT;
+    }
+
+    /**
+     * @return boolean
+     */
+    public function getVerbosity()
+    {
+        return $this->verbosity;
+    }
+
+    /**
+     * @param boolean $verbosity
+     */
+    public function setVerbosity($verbosity)
+    {
+        $this->verbosity = boolval($verbosity);
+    }
 }
