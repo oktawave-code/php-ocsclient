@@ -2,4 +2,6 @@
 nbproject
 *~
 .project
+.idea
 .settings
+*.local.php
