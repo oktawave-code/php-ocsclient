@@ -250,10 +250,6 @@ class Oktawave_OCS_OCSClient
         $file = fopen($path, 'r');
         $fsize = filesize($path);
 
-        $customHeaders = array(
-            'Content-Length' => $fsize,
-        );
-
         $files = array('file' => $file, 'filesize' => $fsize, 'etag' => null);
 
         if ($checkIntegrity) {
