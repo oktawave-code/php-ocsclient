@@ -129,9 +129,11 @@ class Oktawave_OCS_OCSClient
      * @param string $path
      * @param string $delimiter
      * @param boolean $fullUrls
+	 * @param int $limit
+     * @param int $marker
      * @return array
      */
-    public function listObjects($path = null, $delimiter = null, $fullUrls = false)
+    public function listObjects($path = null, $delimiter = null, $fullUrls = false, $limit = null, $marker = null)
     {
         $this->isAuthenticated();
 
@@ -146,11 +148,23 @@ class Oktawave_OCS_OCSClient
         if ($delimiter) {
             $queryParams['delimiter'] = $delimiter;
         }
+		
+		if ($limit) {
+			if ($limit > 10000) {
+				$limit = 10000;
+			}
+
+			$queryParams['limit'] = $limit;
+		}
+		
+        if ($marker) {
+            $queryParams['marker'] = $marker;
+        }		
 
         if (!empty($queryParams)) {
             $endpoint .= '?' . http_build_query($queryParams);
         }
-
+		
         $ret = $this->createCurl($this->bucket . $endpoint, self::METHOD_GET, null, null, true, false, self::FORMAT_JSON);
 
         return json_decode($ret['body'], true);
@@ -474,11 +488,9 @@ class Oktawave_OCS_OCSClient
         if (substr($endpoint, 0, 8) == "https://") {
             $url = $endpoint;
         } else {
-            // Allow files with spaces
-            $endpoint = rawurlencode($endpoint);
             $url = $this->storageUrl . '/' . $endpoint;
         }
-
+		
         curl_setopt_array($curl, array(
             CURLOPT_URL => $url,
             CURLOPT_SSL_VERIFYPEER => true,
@@ -538,6 +550,7 @@ class Oktawave_OCS_OCSClient
         curl_setopt($curl, CURLOPT_HTTPHEADER, $this->makeHeaders($headers));
 
         $response = curl_exec($curl);
+		
         $headerSize = curl_getinfo($curl, CURLINFO_HEADER_SIZE);
         $httpCode = curl_getinfo($curl, CURLINFO_HTTP_CODE);
 
@@ -545,7 +558,7 @@ class Oktawave_OCS_OCSClient
         $errorMessage = curl_error($curl);
 
         curl_close($curl);
-
+		
         if (isset($fhRes)) {
             fclose($fhRes);
         }
