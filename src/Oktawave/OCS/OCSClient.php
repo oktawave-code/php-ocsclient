@@ -256,7 +256,7 @@ class Oktawave_OCS_OCSClient
             $files['etag'] = md5_file($path);
         }
 
-        $ret = $this->createCurl($this->bucket . '/' . $dstPath, self::METHOD_PUT, $files, $customHeaders);
+        $ret = $this->createCurl($this->bucket . '/' . $dstPath, self::METHOD_PUT, $files);
 
         fclose($file);
 
