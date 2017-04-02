@@ -404,9 +404,10 @@ class Oktawave_OCS_OCSClient
     {
         $this->isAuthenticated();
 
-        if (!file_exists($destinationPath)) {
+        if (!file_exists(dirname($destinationPath))) {
             mkdir(dirname($destinationPath), 0777, true);
         }
+
         $file = fopen($destinationPath, "w+");
 
         $ret = $this->createCurl($this->bucket . '/' . $path, self::METHOD_GET, array('file' => $file));
